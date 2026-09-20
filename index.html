@@ -8,7 +8,18 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+
+<!-- Stylesheet do Google Fonts carregado sem bloquear o render
+     (técnica documentada no web.dev "defer non-critical CSS") -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'"/>
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"/></noscript>
+
+<!-- Poster do vídeo pré-carregado: é o maior candidato a LCP nesta
+     página, por cobrir a tela inteira atrás do conteúdo -->
+<link rel="preload" as="image" href="video-fundo-poster.webp" fetchpriority="high"/>
+
+<!-- Reaproveita o logo como favicon — evita 404 de /favicon.ico -->
+<link rel="icon" href="logo.webp" type="image/webp"/>
 
 <style>
 /* Tokens de marca, cor sempre solida */
@@ -28,6 +39,7 @@
   --space-md:     1.5rem;
   --space-lg:     2.5rem;
   --transition:   .25s ease;
+  --blur-strength: 16px; /* reduzido no mobile via media query abaixo */
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -52,11 +64,15 @@ body {
 }
 
 .video-stage video {
+  /* inset:0 já preenche o contêiner por completo — não precisa de
+     top/left:50% + transform, que só criaria uma camada de
+     composição extra sem nenhum efeito visual adicional */
   position: absolute;
-  top: 50%; left: 50%;
-  width: 100%; height: 100%;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  transform: translate(-50%, -50%);
+  background: var(--primary-dark);
 }
 
 .video-veil {
@@ -147,14 +163,17 @@ section[aria-label="Diretoria"] {
   width: 100%;
   position: relative;
   background: var(--card-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(var(--blur-strength));
+  -webkit-backdrop-filter: blur(var(--blur-strength));
   border: 1px solid var(--card-bd);
   border-radius: var(--radius);
   padding: var(--space-md) var(--space-md) var(--space-md) var(--space-sm);
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+  /* Isola o recálculo interno do card do resto da página (hover/foco).
+     Só "layout" — "paint" cortaria o box-shadow de glow abaixo. */
+  contain: layout;
   transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
 }
 
@@ -276,6 +295,13 @@ footer p {
   .team-card, .contact-btn, .social-btn { transition: none !important; }
 }
 
+/* backdrop-filter é caro para o compositor, principalmente atrás de
+   um vídeo em movimento — reduz o blur no mobile para manter o FPS
+   de scroll em GPUs mais fracas. */
+@media (max-width: 768px) {
+  :root { --blur-strength: 8px; }
+}
+
 @media (max-width: 380px) {
   main { padding: var(--space-md) var(--space-sm) var(--space-lg); }
   .team-card { padding: var(--space-sm); gap: 0.75rem; }
@@ -286,19 +312,66 @@ footer p {
 
 <body>
 
+<!-- ─── Vídeo de fundo ───────────────────────────────────────────────
+     O <video> nasce SEM <source>: nenhum byte de vídeo é baixado até
+     o script decidir que vale a pena (desktop + sem prefers-reduced-
+     motion). O poster (WebP) cobre 100% do tempo em que não há vídeo
+     carregado — inclusive mobile e "movimento reduzido", que passam
+     a consumir ZERO bytes de vídeo. -->
 <div class="video-stage" aria-hidden="true">
-  <video autoplay muted loop playsinline preload="auto" poster="video-fundo-poster.jpg">
-    <source src="video-fundo.webm" type="video/webm"/>
+  <video
+    id="bgVideo"
+    muted loop playsinline preload="none"
+    poster="video-fundo-poster.webp">
   </video>
   <div class="video-veil"></div>
   <div class="blueprint-grid" aria-hidden="true"></div>
 </div>
 
+<script>
+(function () {
+  var video = document.getElementById('bgVideo');
+  if (!video) return;
+
+  var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var isDesktop = window.matchMedia('(min-width: 769px)').matches;
+
+  // Mobile e reduced-motion ficam só com o poster estático (0 bytes de vídeo)
+  if (prefersReduced || !isDesktop) return;
+
+  // WebM primeiro (VP9, ~30-40% mais leve), MP4 como fallback universal
+  // — o original só tinha WebM, o que quebra em navegadores sem
+  // suporte a esse codec (ex.: Safari mais antigo/iOS mais antigo).
+  var sourceWebm = document.createElement('source');
+  sourceWebm.src = 'video-fundo.webm';
+  sourceWebm.type = 'video/webm';
+
+  var sourceMp4 = document.createElement('source');
+  sourceMp4.src = 'video-fundo.mp4';
+  sourceMp4.type = 'video/mp4';
+
+  video.appendChild(sourceWebm);
+  video.appendChild(sourceMp4);
+  video.load();
+  video.play().catch(function () {
+    // Autoplay bloqueado pelo navegador: o poster permanece visível.
+  });
+})();
+</script>
+
+<!-- Sprite SVG oculto: define o ícone do WhatsApp UMA vez —
+     antes estava duplicado inteiro em cada um dos 2 cards. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="icon-whatsapp" viewBox="0 0 24 24">
+    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+  </symbol>
+</svg>
+
 <main>
 
   <header>
     <div class="brand-mark">
-      <img src="logo.jpeg" alt="Logo VIP Construtora" width="88" height="88" loading="eager" decoding="async"/>
+      <img src="logo.webp" alt="Logo VIP Construtora" width="88" height="88" loading="eager" decoding="async"/>
     </div>
     <h1>VIP Construtora</h1>
     <p>Aqui, cada conversa também é uma construção.</p>
@@ -321,16 +394,14 @@ footer p {
          href="https://api.whatsapp.com/send/?phone=5588988171313&text=Ol%C3%A1%2C+Vivian%21+Vi+seu+contato+e+gostaria+de+falar+com+voc%C3%AA.&type=phone_number&app_absent=0"
          target="_blank" rel="noopener noreferrer"
          aria-label="Falar com Vivian no WhatsApp">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
-          <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
-        </svg>
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><use href="#icon-whatsapp"/></svg>
       </a>
     </article>
 
     <article class="team-card">
       <span class="accent-bar" aria-hidden="true"></span>
       <div class="avatar">
-        <img src="germano.jpeg" alt="Foto de Germano" width="52" height="52" loading="lazy" decoding="async"/>
+        <img src="germano.webp" alt="Foto de Germano" width="52" height="52" loading="lazy" decoding="async"/>
       </div>
       <div class="team-info">
         <p class="name">Germano</p>
@@ -340,9 +411,7 @@ footer p {
          href="https://api.whatsapp.com/send/?phone=5588992600715&text=Ol%C3%A1%2C+Germano%21+Vi+seu+contato+e+gostaria+de+falar+com+voc%C3%AA.&type=phone_number&app_absent=0"
          target="_blank" rel="noopener noreferrer"
          aria-label="Falar com Germano no WhatsApp">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
-          <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
-        </svg>
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><use href="#icon-whatsapp"/></svg>
       </a>
     </article>
 
@@ -364,14 +433,6 @@ footer p {
   </footer>
 
 </main>
-
-<script>
-(function () {
-  var mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-  var vid = document.querySelector('.video-stage video');
-  if (mq.matches && vid) vid.pause();
-})();
-</script>
 
 </body>
 </html>
