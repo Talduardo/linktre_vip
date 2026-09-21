@@ -314,10 +314,10 @@ footer p {
 
 <!-- ─── Vídeo de fundo ───────────────────────────────────────────────
      O <video> nasce SEM <source>: nenhum byte de vídeo é baixado até
-     o script decidir que vale a pena (desktop + sem prefers-reduced-
-     motion). O poster (WebP) cobre 100% do tempo em que não há vídeo
-     carregado — inclusive mobile e "movimento reduzido", que passam
-     a consumir ZERO bytes de vídeo. -->
+     o script decidir carregar (roda em qualquer tela — desktop e
+     mobile — exceto quando o usuário pediu "movimento reduzido").
+     O poster (WebP) cobre o instante entre o primeiro paint e o
+     vídeo terminar de carregar. -->
 <div class="video-stage" aria-hidden="true">
   <video
     id="bgVideo"
@@ -334,14 +334,14 @@ footer p {
   if (!video) return;
 
   var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var isDesktop = window.matchMedia('(min-width: 769px)').matches;
 
-  // Mobile e reduced-motion ficam só com o poster estático (0 bytes de vídeo)
-  if (prefersReduced || !isDesktop) return;
+  // Vídeo carrega em qualquer tamanho de tela (desktop e mobile), por
+  // pedido explícito. Mantido apenas o respeito a "movimento reduzido"
+  // — não é uma escolha de performance, é acessibilidade para quem tem
+  // sensibilidade vestibular a movimento na tela.
+  if (prefersReduced) return;
 
   // WebM primeiro (VP9, ~30-40% mais leve), MP4 como fallback universal
-  // — o original só tinha WebM, o que quebra em navegadores sem
-  // suporte a esse codec (ex.: Safari mais antigo/iOS mais antigo).
   var sourceWebm = document.createElement('source');
   sourceWebm.src = 'video-fundo.webm';
   sourceWebm.type = 'video/webm';
